@@ -49,17 +49,24 @@ osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for myTask02 */
 osThreadId_t myTask02Handle;
 const osThreadAttr_t myTask02_attributes = {
   .name = "myTask02",
   .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for button_task */
+osThreadId_t button_taskHandle;
+const osThreadAttr_t button_task_attributes = {
+  .name = "button_task",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
 };
 /* USER CODE BEGIN PV */
-BaseType_t task;
+TaskHandle_t volatile task=NULL;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,6 +75,7 @@ static void MX_GPIO_Init(void);
 static void MX_RTC_Init(void);
 void StartDefaultTask(void *argument);
 void StartTask02(void *argument);
+void Start_button(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -136,6 +144,9 @@ int main(void)
 
   /* creation of myTask02 */
   myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
+  task=myTask02Handle;
+  /* creation of button_task */
+  button_taskHandle = osThreadNew(Start_button, NULL, &button_task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -279,10 +290,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, gled_Pin|rled_Pin|bled_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : Button_Pin */
+  GPIO_InitStruct.Pin = Button_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(Button_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : gled_Pin rled_Pin bled_Pin */
   GPIO_InitStruct.Pin = gled_Pin|rled_Pin|bled_Pin;
@@ -329,15 +347,54 @@ void StartTask02(void *argument)
 {
   /* USER CODE BEGIN StartTask02 */
   /* Infinite loop */
+	BaseType_t status;
 	while(1)
 	{
   HAL_GPIO_TogglePin(bled_GPIO_Port, bled_Pin);
   HAL_Delay(500);
+ status= xTaskNotifyWait(0,0,NULL,1000);
+ if(status==pdTRUE)
+ {
+	 task=defaultTaskHandle;
+	 vTaskDelete(myTask02Handle);
+ }
+
 	}
   /* USER CODE END StartTask02 */
 }
 
+/* USER CODE BEGIN Header_Start_button */
+/**
+* @brief Function implementing the button_task thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_Start_button */
+void Start_button(void *argument)
+{
+  /* USER CODE BEGIN Start_button */
+  /* Infinite loop */
+  uint8_t br=0;
+  uint8_t pr=0;
+  while(1)
+  {
+	  br=HAL_GPIO_ReadPin(Button_GPIO_Port, Button_Pin);
+	  if(br)
+	  {
+		  if(!pr)
+		  {
+			  xTaskNotify(task,0,eNoAction);
+		  }
 
+	  }
+	  pr=br;
+	  vTaskDelay(100);
+  }
+
+
+
+  /* USER CODE END Start_button */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
