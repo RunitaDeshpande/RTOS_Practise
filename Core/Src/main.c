@@ -76,7 +76,7 @@ static void MX_RTC_Init(void);
 void StartDefaultTask(void *argument);
 void StartTask02(void *argument);
 void Start_button(void *argument);
-
+void vApplicationIdleHook(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -140,7 +140,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+ // defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* creation of myTask02 */
   myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
@@ -351,11 +351,10 @@ void StartTask02(void *argument)
 	{
   HAL_GPIO_TogglePin(bled_GPIO_Port, bled_Pin);
   HAL_Delay(500);
- status= xTaskNotifyWait(0,0,NULL,10);
- if(status==pdTRUE)
- {
-	 vTaskPrioritySet(defaultTaskHandle, 24);
- }
+
+	 vTaskDelete(myTask02Handle);
+
+
 
 	}
   /* USER CODE END StartTask02 */
@@ -394,6 +393,11 @@ void Start_button(void *argument)
   /* USER CODE END Start_button */
 }
 
+
+void vApplicationIdleHook(void)
+{
+	HAL_GPIO_WritePin(rled_GPIO_Port, rled_Pin, 1);
+}
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
