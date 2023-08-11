@@ -329,9 +329,8 @@ void StartDefaultTask(void *argument)
   while(1)
   {
 	  HAL_GPIO_TogglePin(gled_GPIO_Port, gled_Pin);
-	  HAL_Delay(500);
-	  HAL_GPIO_TogglePin(rled_GPIO_Port, rled_Pin);
-	  HAL_Delay(500);
+      HAL_Delay(500);
+      vTaskPrioritySet(myTask02Handle, 8);
   }
   /* USER CODE END 5 */
 }
@@ -352,11 +351,10 @@ void StartTask02(void *argument)
 	{
   HAL_GPIO_TogglePin(bled_GPIO_Port, bled_Pin);
   HAL_Delay(500);
- status= xTaskNotifyWait(0,0,NULL,1000);
+ status= xTaskNotifyWait(0,0,NULL,10);
  if(status==pdTRUE)
  {
-	 task=defaultTaskHandle;
-	 vTaskDelete(myTask02Handle);
+	 vTaskPrioritySet(defaultTaskHandle, 24);
  }
 
 	}
