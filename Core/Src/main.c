@@ -23,7 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include"queue.h"
+#include"timers.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,6 +44,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 RTC_HandleTypeDef hrtc;
+
+UART_HandleTypeDef huart3;
 
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -67,16 +70,21 @@ const osThreadAttr_t button_task_attributes = {
 };
 /* USER CODE BEGIN PV */
 TaskHandle_t volatile task=NULL;
+char tmsg[20]="choose the led";
+uint8_t Rdata;
+TimerHandle_t timer1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_RTC_Init(void);
+static void MX_USART3_UART_Init(void);
 void StartDefaultTask(void *argument);
 void StartTask02(void *argument);
 void Start_button(void *argument);
-void vApplicationIdleHook(void);
+uint8_t receiveUart(void);
+static void prvAutoReloadTimerCallback(TimerHandle_t xTimer);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -115,8 +123,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_RTC_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+HAL_UART_Transmit(&huart3,tmsg , sizeof(tmsg), 1000);
+//USART3->CR1 |= USART_CR1_RXNEIE;
+receiveUart();
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -132,6 +143,8 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_TIMERS */
   /* start timers, add new ones, ... */
+  timer1=xTimerCreate("timer1", 500, pdTRUE, 0,prvAutoReloadTimerCallback);
+  xTimerStart( timer1, 0 );
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
@@ -143,10 +156,10 @@ int main(void)
  // defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* creation of myTask02 */
-  myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
-  task=myTask02Handle;
+ // myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
+
   /* creation of button_task */
-  button_taskHandle = osThreadNew(Start_button, NULL, &button_task_attributes);
+ // button_taskHandle = osThreadNew(Start_button, NULL, &button_task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -157,6 +170,7 @@ int main(void)
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
+ // vTaskStartScheduler();
   osKernelStart();
 
   /* We should never get here as control is now taken by the scheduler */
@@ -210,8 +224,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3;
   PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  PeriphClkInitStruct.Usart3ClockSelection = RCC_USART3CLKSOURCE_PCLK1;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -281,6 +296,41 @@ static void MX_RTC_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -292,6 +342,7 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, gled_Pin|rled_Pin|bled_Pin, GPIO_PIN_RESET);
@@ -326,12 +377,14 @@ void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
+
   while(1)
   {
 	  HAL_GPIO_TogglePin(gled_GPIO_Port, gled_Pin);
       HAL_Delay(500);
       vTaskPrioritySet(myTask02Handle, 8);
   }
+
   /* USER CODE END 5 */
 }
 
@@ -346,17 +399,19 @@ void StartTask02(void *argument)
 {
   /* USER CODE BEGIN StartTask02 */
   /* Infinite loop */
-	BaseType_t status;
+
+  if(Rdata)
+  {
 	while(1)
 	{
   HAL_GPIO_TogglePin(bled_GPIO_Port, bled_Pin);
   HAL_Delay(500);
 
-	 vTaskDelete(myTask02Handle);
-
-
-
 	}
+  }
+
+
+
   /* USER CODE END StartTask02 */
 }
 
@@ -387,17 +442,26 @@ void Start_button(void *argument)
 	  pr=br;
 	  vTaskDelay(100);
   }
-
-
-
   /* USER CODE END Start_button */
-}
+  }
 
 
-void vApplicationIdleHook(void)
+uint8_t receiveUart(void)
+ {
+ 	if(USART3->ISR & USART_ISR_RXNE)// receiver buffer is full and receiver is enabled.
+ 	{
+ 		Rdata=USART3->RDR;
+ 		return 1;
+ 	}
+ 	return 0;
+ }
+
+static void prvAutoReloadTimerCallback(TimerHandle_t xTimer)
 {
-	HAL_GPIO_WritePin(rled_GPIO_Port, rled_Pin, 1);
+	char timer[20]="Timer working";
+	HAL_UART_Transmit(&huart3, timer, sizeof(timer), 100);
 }
+
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
