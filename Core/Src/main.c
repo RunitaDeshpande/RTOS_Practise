@@ -24,7 +24,8 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include"queue.h"
-#include"timers.h"
+#include"semphr.h"
+#include"FreeRTOS.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,32 +48,23 @@ RTC_HandleTypeDef hrtc;
 
 UART_HandleTypeDef huart3;
 
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
+/* Definitions for Employee_task */
+osThreadId_t Employee_taskHandle;
+const osThreadAttr_t Employee_task_attributes = {
+  .name = "Employee_task",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for myTask02 */
-osThreadId_t myTask02Handle;
-const osThreadAttr_t myTask02_attributes = {
-  .name = "myTask02",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
-/* Definitions for button_task */
-osThreadId_t button_taskHandle;
-const osThreadAttr_t button_task_attributes = {
-  .name = "button_task",
+/* Definitions for Manager_task */
+osThreadId_t Manager_taskHandle;
+const osThreadAttr_t Manager_task_attributes = {
+  .name = "Manager_task",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
 /* USER CODE BEGIN PV */
-TaskHandle_t volatile task=NULL;
-char tmsg[20]="choose the led";
-uint8_t Rdata;
-TimerHandle_t timer1;
+xSemaphoreHandle xWork;
+QueueHandle_t xWorkQueue;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,11 +72,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_RTC_Init(void);
 static void MX_USART3_UART_Init(void);
-void StartDefaultTask(void *argument);
-void StartTask02(void *argument);
-void Start_button(void *argument);
-uint8_t receiveUart(void);
-static void prvAutoReloadTimerCallback(TimerHandle_t xTimer);
+void Start_employee_task(void *argument);
+void Start_manager_task(void *argument);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -125,9 +115,8 @@ int main(void)
   MX_RTC_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-HAL_UART_Transmit(&huart3,tmsg , sizeof(tmsg), 1000);
-//USART3->CR1 |= USART_CR1_RXNEIE;
-receiveUart();
+
+
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -139,27 +128,25 @@ receiveUart();
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
+  xWork=xSemaphoreCreateBinary();
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
-  /* start timers, add new ones, ... */
-  timer1=xTimerCreate("timer1", 500, pdTRUE, 0,prvAutoReloadTimerCallback);
-  xTimerStart( timer1, 0 );
+
   /* USER CODE END RTOS_TIMERS */
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+
+  xWorkQueue = xQueueCreate(1,sizeof(uint8_t));
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
- // defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of Employee_task */
+  Employee_taskHandle = osThreadNew(Start_employee_task, NULL, &Employee_task_attributes);
 
-  /* creation of myTask02 */
- // myTask02Handle = osThreadNew(StartTask02, NULL, &myTask02_attributes);
-
-  /* creation of button_task */
- // button_taskHandle = osThreadNew(Start_button, NULL, &button_task_attributes);
+  /* creation of Manager_task */
+  Manager_taskHandle = osThreadNew(Start_manager_task, NULL, &Manager_task_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -170,7 +157,6 @@ receiveUart();
   /* USER CODE END RTOS_EVENTS */
 
   /* Start scheduler */
- // vTaskStartScheduler();
   osKernelStart();
 
   /* We should never get here as control is now taken by the scheduler */
@@ -366,100 +352,52 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE END 4 */
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_Start_employee_task */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the Employee_task thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+/* USER CODE END Header_Start_employee_task */
+void Start_employee_task(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-
-  while(1)
-  {
-	  HAL_GPIO_TogglePin(gled_GPIO_Port, gled_Pin);
-      HAL_Delay(500);
-      vTaskPrioritySet(myTask02Handle, 8);
-  }
-
+	uint8_t buffer;
+	BaseType_t xstatus;
+	while(1)
+	{
+	xSemaphoreTake(xWork,0);
+	xstatus=xQueueReceive(xWorkQueue,&buffer , 0);
+	if(xstatus==pdPASS)
+	{
+		HAL_UART_Transmit(&huart3,&buffer,sizeof(uint8_t),0);
+	}
+	}
   /* USER CODE END 5 */
 }
 
-/* USER CODE BEGIN Header_StartTask02 */
+/* USER CODE BEGIN Header_Start_manager_task */
 /**
-* @brief Function implementing the myTask02 thread.
+* @brief Function implementing the Manager_task thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_StartTask02 */
-void StartTask02(void *argument)
+/* USER CODE END Header_Start_manager_task */
+void Start_manager_task(void *argument)
 {
-  /* USER CODE BEGIN StartTask02 */
+  /* USER CODE BEGIN Start_manager_task */
   /* Infinite loop */
-
-  if(Rdata)
-  {
-	while(1)
-	{
-  HAL_GPIO_TogglePin(bled_GPIO_Port, bled_Pin);
-  HAL_Delay(500);
-
-	}
-  }
-
-
-
-  /* USER CODE END StartTask02 */
-}
-
-/* USER CODE BEGIN Header_Start_button */
-/**
-* @brief Function implementing the button_task thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_Start_button */
-void Start_button(void *argument)
-{
-  /* USER CODE BEGIN Start_button */
-  /* Infinite loop */
-  uint8_t br=0;
-  uint8_t pr=0;
-  while(1)
-  {
-	  br=HAL_GPIO_ReadPin(Button_GPIO_Port, Button_Pin);
-	  if(br)
+	uint8_t data;
+	  xSemaphoreGive(xWork);
+	  while(1)
 	  {
-		  if(!pr)
-		  {
-			  xTaskNotify(task,0,eNoAction);
-		  }
-
+		  data=1;
+		  xQueueSendToBack(xWorkQueue,&data,0);
+		  xSemaphoreGive(xWork);
+		  vTaskDelete( NULL );
 	  }
-	  pr=br;
-	  vTaskDelay(100);
-  }
-  /* USER CODE END Start_button */
-  }
-
-
-uint8_t receiveUart(void)
- {
- 	if(USART3->ISR & USART_ISR_RXNE)// receiver buffer is full and receiver is enabled.
- 	{
- 		Rdata=USART3->RDR;
- 		return 1;
- 	}
- 	return 0;
- }
-
-static void prvAutoReloadTimerCallback(TimerHandle_t xTimer)
-{
-	char timer[20]="Timer working";
-	HAL_UART_Transmit(&huart3, timer, sizeof(timer), 100);
+  /* USER CODE END Start_manager_task */
 }
 
 /**
