@@ -74,7 +74,7 @@ static void MX_RTC_Init(void);
 static void MX_USART3_UART_Init(void);
 void Start_employee_task(void *argument);
 void Start_manager_task(void *argument);
-
+void send(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -116,7 +116,6 @@ int main(void)
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
-
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -128,7 +127,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
-  xWork=xSemaphoreCreateBinary();
+  xWork=xSemaphoreCreateMutex();
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -349,7 +348,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void send()
+{
+	char data[20]="data transmitting";
 
+	xSemaphoreTake(xWork,1000);
+	HAL_UART_Transmit(&huart3, data, sizeof(data), 10);
+	HAL_Delay(2000);
+	xSemaphoreGive(xWork);
+}
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_Start_employee_task */
@@ -363,17 +370,10 @@ void Start_employee_task(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-	uint8_t buffer;
-	BaseType_t xstatus;
-	while(1)
-	{
-	xSemaphoreTake(xWork,0);
-	xstatus=xQueueReceive(xWorkQueue,&buffer , 0);
-	if(xstatus==pdPASS)
-	{
-		HAL_UART_Transmit(&huart3,&buffer,sizeof(uint8_t),0);
-	}
-	}
+	send();
+		char low[15]="in low task";
+		HAL_UART_Transmit(&huart3, low,sizeof(low), 10);
+
   /* USER CODE END 5 */
 }
 
@@ -388,15 +388,12 @@ void Start_manager_task(void *argument)
 {
   /* USER CODE BEGIN Start_manager_task */
   /* Infinite loop */
-	uint8_t data;
-	  xSemaphoreGive(xWork);
-	  while(1)
-	  {
-		  data=1;
-		  xQueueSendToBack(xWorkQueue,&data,0);
-		  xSemaphoreGive(xWork);
-		  vTaskDelete( NULL );
-	  }
+	send();
+
+		  char high[15]="in high task";
+		  HAL_UART_Transmit(&huart3, high, sizeof(high), 10);
+		  vTaskDelay(1000);
+
   /* USER CODE END Start_manager_task */
 }
 
